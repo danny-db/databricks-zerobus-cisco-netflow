@@ -1,0 +1,6 @@
+# Lakewatch Custom Presets Index
+# Lists all custom datasource presets for discovery by Lakewatch
+# Reference: https://docs.lakewatch.com/ingest-data/presets/preset-development/custom-preset
+
+presets:
+  - cisco/netflow

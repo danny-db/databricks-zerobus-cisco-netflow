@@ -1,0 +1,109 @@
+! =============================================================================
+! Cisco IOS-XE Configuration Examples
+! Configure your Cisco devices to export telemetry to the Telegraf collector
+! Replace <TELEGRAF_IP> with the IP address of your Telegraf server
+! =============================================================================
+
+
+! =============================================================================
+! 1. FLEXIBLE NETFLOW (v9) EXPORT
+! =============================================================================
+
+! Define a flow record (what fields to capture)
+flow record NETFLOW-RECORD
+ match ipv4 source address
+ match ipv4 destination address
+ match ipv4 protocol
+ match transport source-port
+ match transport destination-port
+ match interface input
+ match interface output
+ match ipv4 tos
+ collect counter bytes long
+ collect counter packets long
+ collect transport tcp flags
+ collect timestamp sys-uptime first
+ collect timestamp sys-uptime last
+ collect routing next-hop address ipv4
+ collect routing source as
+ collect routing destination as
+
+! Define the exporter (where to send flows)
+flow exporter ZEROBUS-EXPORTER
+ destination <TELEGRAF_IP>
+ source Loopback0
+ transport udp 2055
+ export-protocol netflow-v9
+ template data timeout 60
+ option interface-table
+ option sampler-table
+
+! Define the flow monitor (ties record + exporter together)
+flow monitor NETFLOW-MONITOR
+ record NETFLOW-RECORD
+ exporter ZEROBUS-EXPORTER
+ cache timeout active 60
+ cache timeout inactive 15
+
+! Apply to interfaces (example: GigabitEthernet1)
+interface GigabitEthernet1
+ ip flow monitor NETFLOW-MONITOR input
+ ip flow monitor NETFLOW-MONITOR output
+
+
+! =============================================================================
+! 2. SYSLOG EXPORT
+! =============================================================================
+
+! Send logs to Telegraf syslog listener
+logging host <TELEGRAF_IP> transport tcp port 6514
+logging trap informational
+logging source-interface Loopback0
+logging origin-id hostname
+
+! Optional: include timestamps and sequence numbers
+service timestamps log datetime msec localtime show-timezone
+service sequence-numbers
+
+! Optional: buffer locally as well
+logging buffered 64000 informational
+
+
+! =============================================================================
+! 3. SNMP TRAP EXPORT
+! =============================================================================
+
+! Enable SNMP and configure trap destination
+snmp-server community public RO
+snmp-server host <TELEGRAF_IP> version 2c public
+
+! Enable common traps
+snmp-server enable traps snmp linkdown linkup coldstart warmstart
+snmp-server enable traps config
+snmp-server enable traps cpu threshold
+snmp-server enable traps memory bufferpeak
+snmp-server enable traps entity
+snmp-server enable traps envmon fan shutdown supply temperature status
+snmp-server enable traps bgp
+snmp-server enable traps ospf
+
+! Set trap source interface
+snmp-server trap-source Loopback0
+
+
+! =============================================================================
+! NOTES
+! =============================================================================
+!
+! - Replace <TELEGRAF_IP> with your Telegraf collector's management IP
+! - Loopback0 is used as source for stable reachability
+! - NetFlow cache timeouts:
+!     active 60  = export long-lived flows every 60 seconds
+!     inactive 15 = export idle flows after 15 seconds of silence
+! - For high-traffic interfaces, consider sampling:
+!     sampler NETFLOW-SAMPLER
+!       mode random 1 out-of 100
+!     interface GigabitEthernet1
+!       ip flow monitor NETFLOW-MONITOR sampler NETFLOW-SAMPLER input
+! - SNMP community "public" is for demo only — use SNMPv3 in production
+!

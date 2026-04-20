@@ -1,0 +1,36 @@
+bundle:
+  name: cisco-telegraf-zerobus
+
+workspace:
+  host: https://e2-demo-field-eng.cloud.databricks.com
+
+resources:
+  pipelines:
+    netflow_to_ocsf:
+      name: "NetFlow to OCSF Pipeline"
+      catalog: danny_catalog
+      schema: cisco_telemetry
+      serverless: true
+      channel: CURRENT
+      continuous: true
+      development: false
+      libraries:
+        - notebook:
+            path: ./databricks/04_netflow_ocsf_pipeline.py
+
+targets:
+  dev:
+    mode: development
+    default: true
+    resources:
+      pipelines:
+        netflow_to_ocsf:
+          development: true
+          continuous: false
+
+  prod:
+    resources:
+      pipelines:
+        netflow_to_ocsf:
+          development: false
+          continuous: true

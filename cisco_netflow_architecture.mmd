@@ -1,0 +1,94 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "primaryColor": "#E8EAF6",
+    "primaryTextColor": "#1A1A1A",
+    "primaryBorderColor": "#3F51B5",
+    "lineColor": "#546E7A",
+    "secondaryColor": "#E8F5E9",
+    "tertiaryColor": "#FFF8E1",
+    "fontSize": "14px",
+    "fontFamily": "Helvetica, Arial, sans-serif"
+  },
+  "flowchart": {
+    "htmlLabels": true,
+    "curve": "basis",
+    "nodeSpacing": 60,
+    "rankSpacing": 80,
+    "padding": 20
+  }
+}}%%
+
+flowchart LR
+
+    subgraph CISCO["<b>Cisco Network Devices</b>"]
+        direction TB
+        R["🔲 Core Routers<br/><small>Flexible NetFlow v9</small>"]
+        S["🔲 Distribution Switches<br/><small>Syslog Events</small>"]
+        F["🔲 ASA Firewalls<br/><small>SNMP Traps</small>"]
+    end
+
+    subgraph DEV["<b>Dev / Testing</b>"]
+        FP["🖥️ fprobe<br/><small>Real traffic capture</small>"]
+    end
+
+    subgraph TEL["<b>Telegraf Collector</b>"]
+        direction TB
+        NF["📥 NetFlow Input<br/><small>UDP :2055</small>"]
+        SL["📥 Syslog Input<br/><small>TCP :6514</small>"]
+        SN["📥 SNMP Trap Input<br/><small>UDP :162</small>"]
+    end
+
+    RELAY["⚡ Zerobus Relay<br/><small>Python • HTTP :9090</small>"]
+
+    subgraph DB["<b>Databricks Lakehouse</b>"]
+        direction TB
+        ZB["🔷 Zerobus Ingest<br/><small>gRPC Stream</small>"]
+
+        subgraph UC["<b>Unity Catalog</b><br/><small>danny_catalog.cisco_telemetry</small>"]
+            direction TB
+            T1["🔺 netflow_v9<br/><small>Delta Lake</small>"]
+            T2["🔺 event_logs<br/><small>Delta Lake</small>"]
+            T3["🔺 snmp_traps<br/><small>Delta Lake</small>"]
+        end
+
+        SQL["📊 SQL Warehouse<br/><small>Analytics &amp; Dashboards</small>"]
+    end
+
+    R -- "NetFlow v9<br/><small>UDP</small>" --> NF
+    S -- "Syslog<br/><small>TCP</small>" --> SL
+    F -- "SNMP Traps<br/><small>UDP</small>" --> SN
+    FP -. "NetFlow v5<br/><small>UDP :2055</small>" .-> NF
+
+    NF --> RELAY
+    SL --> RELAY
+    SN --> RELAY
+
+    RELAY -- "<b>gRPC</b><br/><small>Zerobus SDK</small>" --> ZB
+
+    ZB --> T1
+    ZB --> T2
+    ZB --> T3
+
+    T1 -.-> SQL
+    T2 -.-> SQL
+    T3 -.-> SQL
+
+    style CISCO fill:#E3F2FD,stroke:#1565C0,stroke-width:2px,color:#0D47A1
+    style DEV fill:#FFF8E1,stroke:#F9A825,stroke-width:1px,stroke-dasharray:5 5,color:#E65100
+    style TEL fill:#E8EAF6,stroke:#3F51B5,stroke-width:2px,color:#1A237E
+    style DB fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px,color:#1B5E20
+    style UC fill:#C8E6C9,stroke:#43A047,stroke-width:1px,color:#2E7D32
+    style RELAY fill:#FCE4EC,stroke:#C62828,stroke-width:2px,color:#B71C1C
+    style ZB fill:#E8F5E9,stroke:#2E7D32,stroke-width:1px
+    style SQL fill:#E0F2F1,stroke:#00695C,stroke-width:1px
+    style T1 fill:#FFFFFF,stroke:#2E7D32,stroke-width:1px
+    style T2 fill:#FFFFFF,stroke:#2E7D32,stroke-width:1px
+    style T3 fill:#FFFFFF,stroke:#2E7D32,stroke-width:1px
+    style R fill:#FFFFFF,stroke:#1565C0,stroke-width:1px
+    style S fill:#FFFFFF,stroke:#1565C0,stroke-width:1px
+    style F fill:#FFFFFF,stroke:#1565C0,stroke-width:1px
+    style FP fill:#FFFFFF,stroke:#E65100,stroke-width:1px
+    style NF fill:#FFFFFF,stroke:#3F51B5,stroke-width:1px
+    style SL fill:#FFFFFF,stroke:#3F51B5,stroke-width:1px
+    style SN fill:#FFFFFF,stroke:#3F51B5,stroke-width:1px

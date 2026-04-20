@@ -1,0 +1,228 @@
+# =============================================================================
+# Lakewatch Custom Preset: Cisco NetFlow v9
+# Transforms raw Cisco NetFlow v9 records into OCSF Network Activity (4001)
+# gold tables for Lakewatch SIEM integration.
+#
+# Source: danny_catalog.cisco_telemetry.netflow_v9 (Zerobus ingested)
+# Output: OCSF Network Activity gold table (Lakewatch managed)
+#
+# Reference: https://docs.lakewatch.com/ingest-data/presets/preset-development/preset-structure
+# =============================================================================
+
+metadata:
+  name: cisco_netflow
+  author: danny.wong@databricks.com
+  title: Cisco NetFlow v9
+  description: >
+    Ingests Cisco NetFlow v9 flow records and transforms them into
+    OCSF Network Activity (class_uid 4001) events. Supports traffic
+    direction classification via RFC 1918 private IP detection.
+    Designed for NOC/SOC use cases including lateral movement detection,
+    data exfiltration alerting, and capacity planning.
+  icon_url: https://upload.wikimedia.org/wikipedia/commons/thumb/0/08/Cisco_logo_blue_2016.svg/1200px-Cisco_logo_blue_2016.svg.png
+
+# -----------------------------------------------------------------------------
+# Primary Key: Deduplication configuration
+# timeColumn must be extracted in the Bronze stage
+# -----------------------------------------------------------------------------
+primaryKey:
+  timeColumn: ingestion_time
+  additionalColumns:
+    - src_ip
+    - dst_ip
+    - src_port
+    - dst_port
+    - protocol
+
+# -----------------------------------------------------------------------------
+# Bronze Layer: Raw ingestion
+# NetFlow data is already structured (not JSON blobs), so we skip
+# loadAsSingleVariant and read columns directly.
+# -----------------------------------------------------------------------------
+bronze:
+  loadAsSingleVariant: false
+  preTransform:
+    - - "data"
+      - "CAST(ingestion_time AS TIMESTAMP) AS ingestion_time"
+      - "CAST(src_ip AS STRING) AS src_ip"
+      - "CAST(dst_ip AS STRING) AS dst_ip"
+      - "CAST(src_port AS INT) AS src_port"
+      - "CAST(dst_port AS INT) AS dst_port"
+      - "CAST(protocol AS INT) AS protocol_num"
+      - "CAST(protocol_name AS STRING) AS protocol_name"
+      - "CAST(in_bytes AS BIGINT) AS in_bytes"
+      - "CAST(in_packets AS BIGINT) AS in_packets"
+      - "CAST(tcp_flags AS INT) AS tcp_flags"
+      - "CAST(tos AS INT) AS tos"
+      - "CAST(flow_duration_ms AS BIGINT) AS flow_duration_ms"
+      - "CAST(src_as AS INT) AS src_as"
+      - "CAST(dst_as AS INT) AS dst_as"
+      - "CAST(agent_host AS STRING) AS agent_host"
+      - "CAST(host AS STRING) AS collector_host"
+
+# -----------------------------------------------------------------------------
+# Silver Layer: Normalization and enrichment
+# Adds direction classification, normalizes protocol names
+# -----------------------------------------------------------------------------
+silver:
+  transform:
+    - input: cisco_netflow
+      output: netflow_normalized
+      fields:
+        # Core flow fields
+        - name: src_ip
+          from: src_ip
+        - name: dst_ip
+          from: dst_ip
+        - name: src_port
+          from: src_port
+        - name: dst_port
+          from: dst_port
+        - name: protocol_num
+          from: protocol_num
+        - name: protocol_name
+          expr: "LOWER(protocol_name)"
+        - name: in_bytes
+          from: in_bytes
+        - name: in_packets
+          from: in_packets
+        - name: tcp_flags
+          from: tcp_flags
+        - name: tos
+          from: tos
+        - name: flow_duration_ms
+          from: flow_duration_ms
+        - name: src_as
+          from: src_as
+        - name: dst_as
+          from: dst_as
+        - name: agent_host
+          from: agent_host
+        - name: collector_host
+          from: collector_host
+        - name: ingestion_time
+          from: ingestion_time
+
+        # Derived: Traffic direction (RFC 1918 classification)
+        - name: direction_id
+          expr: >
+            CASE
+              WHEN src_ip LIKE '10.%' OR src_ip LIKE '172.16.%' OR src_ip LIKE '172.17.%'
+                OR src_ip LIKE '172.18.%' OR src_ip LIKE '172.19.%' OR src_ip LIKE '172.2%'
+                OR src_ip LIKE '172.30.%' OR src_ip LIKE '172.31.%' OR src_ip LIKE '192.168.%'
+              THEN 2
+              WHEN dst_ip LIKE '10.%' OR dst_ip LIKE '172.16.%' OR dst_ip LIKE '172.17.%'
+                OR dst_ip LIKE '172.18.%' OR dst_ip LIKE '172.19.%' OR dst_ip LIKE '172.2%'
+                OR dst_ip LIKE '172.30.%' OR dst_ip LIKE '172.31.%' OR dst_ip LIKE '192.168.%'
+              THEN 1
+              ELSE 0
+            END
+        - name: direction
+          expr: >
+            CASE
+              WHEN src_ip LIKE '10.%' OR src_ip LIKE '172.16.%' OR src_ip LIKE '172.17.%'
+                OR src_ip LIKE '172.18.%' OR src_ip LIKE '172.19.%' OR src_ip LIKE '172.2%'
+                OR src_ip LIKE '172.30.%' OR src_ip LIKE '172.31.%' OR src_ip LIKE '192.168.%'
+              THEN 'Outbound'
+              WHEN dst_ip LIKE '10.%' OR dst_ip LIKE '172.16.%' OR dst_ip LIKE '172.17.%'
+                OR dst_ip LIKE '172.18.%' OR dst_ip LIKE '172.19.%' OR dst_ip LIKE '172.2%'
+                OR dst_ip LIKE '172.30.%' OR dst_ip LIKE '172.31.%' OR dst_ip LIKE '192.168.%'
+              THEN 'Inbound'
+              ELSE 'Unknown'
+            END
+
+# -----------------------------------------------------------------------------
+# Gold Layer: OCSF Network Activity (class_uid: 4001)
+# Maps normalized NetFlow to OCSF standard schema
+# Reference: https://schema.ocsf.io/1.3.0/classes/network_activity
+# -----------------------------------------------------------------------------
+gold:
+  - input: netflow_normalized
+    output: network_activity
+    fields:
+      # OCSF Base Event
+      - name: activity_id
+        literal: 6
+      - name: activity_name
+        literal: "Traffic"
+      - name: category_uid
+        literal: 4
+      - name: category_name
+        literal: "Network Activity"
+      - name: class_uid
+        literal: 4001
+      - name: class_name
+        literal: "Network Activity"
+      - name: type_uid
+        literal: 400106
+      - name: severity_id
+        literal: 1
+      - name: severity
+        literal: "Informational"
+      - name: status_id
+        literal: 1
+      - name: status
+        literal: "Success"
+
+      # Time
+      - name: time
+        expr: "UNIX_MILLIS(ingestion_time)"
+      - name: duration
+        from: flow_duration_ms
+
+      # Source Endpoint
+      - name: src_endpoint__ip
+        from: src_ip
+      - name: src_endpoint__port
+        from: src_port
+      - name: src_endpoint__autonomous_system__number
+        from: src_as
+
+      # Destination Endpoint
+      - name: dst_endpoint__ip
+        from: dst_ip
+      - name: dst_endpoint__port
+        from: dst_port
+      - name: dst_endpoint__autonomous_system__number
+        from: dst_as
+
+      # Connection Info
+      - name: connection_info__protocol_num
+        from: protocol_num
+      - name: connection_info__protocol_name
+        from: protocol_name
+      - name: connection_info__direction_id
+        from: direction_id
+      - name: connection_info__direction
+        from: direction
+      - name: connection_info__tcp_flags
+        from: tcp_flags
+
+      # Traffic
+      - name: traffic__bytes_in
+        from: in_bytes
+      - name: traffic__packets_in
+        from: in_packets
+
+      # Metadata
+      - name: metadata__version
+        literal: "1.3.0"
+      - name: metadata__logged_time
+        expr: "UNIX_MILLIS(ingestion_time)"
+      - name: metadata__product__name
+        literal: "Cisco NetFlow"
+      - name: metadata__product__vendor_name
+        literal: "Cisco"
+      - name: metadata__product__feature__name
+        literal: "Flexible NetFlow"
+
+      # Raw data reference
+      - name: raw_data
+        expr: >
+          TO_JSON(NAMED_STRUCT(
+            'src_ip', src_ip, 'dst_ip', dst_ip,
+            'src_port', src_port, 'dst_port', dst_port,
+            'protocol_num', protocol_num, 'protocol_name', protocol_name,
+            'in_bytes', in_bytes, 'in_packets', in_packets,
+            'tcp_flags', tcp_flags, 'agent_host', agent_host
+          ))
