@@ -4,19 +4,7 @@ Ingest Cisco network telemetry (NetFlow, Syslog, SNMP Traps) into Databricks Uni
 
 ## Architecture
 
-```
-Cisco Devices              Telegraf              Relay               Databricks
-┌──────────────┐      ┌──────────────┐     ┌──────────────┐     ┌──────────────────────┐
-│ NetFlow v5/v9│─UDP─▶│inputs.netflow│     │              │     │ danny_catalog.        │
-│ (port 2055)  │      │              │     │  zerobus     │gRPC │  cisco_telemetry.     │
-├──────────────┤      ├──────────────┤HTTP │  _relay.py   │────▶│  ├─ netflow_v9        │
-│ Syslog       │─TCP─▶│inputs.syslog │────▶│              │     │  ├─ event_logs        │
-│ (port 6514)  │      │              │:9090│  (Zerobus    │     │  └─ snmp_traps        │
-├──────────────┤      ├──────────────┤     │   SDK)       │     │                      │
-│ SNMP Traps   │─UDP─▶│inputs.snmp   │     │              │     │ Unity Catalog         │
-│ (port 162)   │      │  _trap       │     │              │     │ Delta Lake            │
-└──────────────┘      └──────────────┘     └──────────────┘     └──────────────────────┘
-```
+![Architecture Overview](docs/architecture_handdrawn.png)
 
 **Why a relay?** The Zerobus REST API requires a specific OAuth2 token audience that standard HTTP clients can't mint. The relay uses the official Zerobus Python SDK which handles authentication via gRPC natively.
 
